@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Clonador de voz</title>
+<style>
+  :root {
+    --bg: #e9eef1;
+    --panel: #f8fafb;
+    --ink: #13212b;
+    --muted: #5b6b76;
+    --line: #c9d4da;
+    --accent: #0b6e78;
+    --accent-ink: #ffffff;
+    --accent-soft: #d3e9eb;
+    --danger: #a3311f;
+    --danger-soft: #f6dcd6;
+    --radius: 10px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1a21;
+      --panel: #16252e;
+      --ink: #e6eef2;
+      --muted: #96a8b3;
+      --line: #2b414e;
+      --accent: #3fb6c2;
+      --accent-ink: #06232a;
+      --accent-soft: #17414a;
+      --danger: #ff9b87;
+      --danger-soft: #45201a;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+    line-height: 1.5;
+    padding: 28px 16px 60px;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; }
+  header { margin-bottom: 22px; }
+  h1 { font-size: 1.7rem; margin: 0 0 4px; letter-spacing: -0.01em; }
+  header p { margin: 0; color: var(--muted); max-width: 60ch; }
+
+  .grid { display: grid; grid-template-columns: 1fr 1.25fr; gap: 18px; align-items: start; }
+  @media (max-width: 760px) { .grid { grid-template-columns: 1fr; } }
+
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 20px;
+  }
+  .panel h2 { font-size: 1.05rem; margin: 0 0 14px; }
+  .panel h2 span { color: var(--muted); font-weight: 400; }
+
+  label { display: block; font-size: .9rem; font-weight: 600; margin: 14px 0 6px; }
+  label small { font-weight: 400; color: var(--muted); }
+  input[type="text"], input[type="password"], textarea, select {
+    width: 100%;
+    font: inherit;
+    color: inherit;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 9px 11px;
+  }
+  textarea { resize: vertical; min-height: 190px; }
+  input:focus-visible, textarea:focus-visible, select:focus-visible,
+  button:focus-visible, .drop:focus-within {
+    outline: 3px solid var(--accent);
+    outline-offset: 1px;
+  }
+
+  .drop {
+    display: block;
+    border: 2px dashed var(--line);
+    border-radius: 8px;
+    padding: 18px 12px;
+    text-align: center;
+    color: var(--muted);
+    cursor: pointer;
+    font-weight: 400;
+    margin: 0;
+  }
+  .drop.has-files { border-color: var(--accent); color: var(--ink); background: var(--accent-soft); }
+  .drop input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+  .hint { font-size: .85rem; color: var(--muted); margin: 6px 0 0; }
+
+  button {
+    font: inherit;
+    font-weight: 600;
+    border: 0;
+    border-radius: 8px;
+    padding: 10px 16px;
+    cursor: pointer;
+    background: var(--accent);
+    color: var(--accent-ink);
+  }
+  button:disabled { opacity: .55; cursor: wait; }
+  button.ghost {
+    background: transparent;
+    color: var(--muted);
+    border: 1px solid var(--line);
+    padding: 5px 10px;
+    font-weight: 400;
+    font-size: .85rem;
+  }
+  .full { width: 100%; margin-top: 16px; }
+
+  .voices { list-style: none; padding: 0; margin: 14px 0 0; }
+  .voices li {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    padding: 8px 0; border-top: 1px solid var(--line);
+  }
+  .voices .name { font-weight: 600; }
+  .voices .id { font-size: .75rem; color: var(--muted); word-break: break-all; }
+  .empty { color: var(--muted); font-size: .9rem; margin: 14px 0 0; }
+
+  .row { display: flex; gap: 12px; flex-wrap: wrap; }
+  .row > div { flex: 1 1 140px; }
+  .count { text-align: right; font-size: .8rem; color: var(--muted); margin-top: 4px; }
+
+  .msg { border-radius: 8px; padding: 10px 12px; margin-top: 14px; font-size: .92rem; }
+  .msg.error { background: var(--danger-soft); color: var(--danger); }
+  .msg.ok { background: var(--accent-soft); }
+  .msg[hidden] { display: none; }
+
+  .result { margin-top: 18px; }
+  audio { width: 100%; }
+  .download { display: inline-block; margin-top: 8px; color: var(--accent); font-weight: 600; }
+  .keybox { margin-bottom: 18px; border-color: var(--accent); }
+  .keybox[hidden] { display: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Clonador de voz</h1>
+    <p>Sube un audio de la voz que quieres copiar y luego escribe cualquier texto para que lo lea con esa voz.</p>
+  </header>
+
+  <section class="panel keybox" id="keybox">
+    <label for="apikey" style="margin-top:0">Tu API key de Fish Audio <small id="keyState"></small></label>
+    <input type="password" id="apikey" placeholder="Pega tu clave aquí" autocomplete="off">
+    <p class="hint">Es lo único que necesitas. Se guarda solo en este navegador y se envía directo a Fish Audio; esta web no la almacena. Créala gratis en fish.audio/app/api-keys.</p>
+  </section>
+
+  <div class="grid">
+    <section class="panel" aria-labelledby="t-voces">
+      <h2 id="t-voces">1. Crea tu voz</h2>
+
+      <label class="drop" id="drop">
+        <input type="file" id="audios" accept="audio/*" multiple>
+        <span id="dropText">Toca para elegir un audio (10 a 30 segundos de voz limpia, sin música)</span>
+      </label>
+      <p class="hint">Formatos recomendados: WAV, MP3 o FLAC. Puedes subir varios audios de la misma voz.</p>
+
+      <label for="vtitle">Nombre de la voz</label>
+      <input type="text" id="vtitle" maxlength="80" placeholder="Ej: Mi narrador">
+
+      <label for="vtext">Lo que dice el audio <small>(opcional, solo si subes un audio)</small></label>
+      <textarea id="vtext" style="min-height:70px" placeholder="Si lo dejas vacío, se detecta solo."></textarea>
+
+      <button class="full" id="btnCreate">Crear voz</button>
+      <div class="msg error" id="vErr" hidden></div>
+      <div class="msg ok" id="vOk" hidden></div>
+
+      <ul class="voices" id="voiceList"></ul>
+      <p class="empty" id="voiceEmpty">Aún no tienes voces guardadas en este navegador.</p>
+
+      <label for="manualId">Ya tienes una voz en Fish Audio <small>(pega su ID)</small></label>
+      <div class="row">
+        <div style="flex: 3 1 160px"><input type="text" id="manualId" placeholder="ID de la voz"></div>
+        <div style="flex: 1 1 80px"><button class="ghost" id="btnAddId" style="width:100%;padding:9px">Añadir</button></div>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="t-texto">
+      <h2 id="t-texto">2. Escribe el texto</h2>
+
+      <label for="voiceSel">Voz</label>
+      <select id="voiceSel"></select>
+
+      <label for="text">Texto</label>
+      <textarea id="text" placeholder="Escribe aquí lo que quieres que diga…"></textarea>
+      <div class="count"><span id="chars">0</span> caracteres</div>
+
+      <div class="row">
+        <div>
+          <label for="lang">Idioma del texto</label>
+          <select id="lang">
+            <option value="auto">Detectar solo</option>
+            <option value="es">Español</option>
+            <option value="es-MX">Español (México)</option>
+            <option value="en">Inglés</option>
+            <option value="pt">Portugués</option>
+          </select>
+        </div>
+        <div>
+          <label for="speed">Velocidad: <span id="speedVal">1.0</span>×</label>
+          <input type="range" id="speed" min="0.5" max="2" step="0.05" value="1" style="width:100%">
+        </div>
+      </div>
+
+      <button class="full" id="btnTts">Generar audio</button>
+      <div class="msg error" id="tErr" hidden></div>
+
+      <div class="result" id="result" hidden>
+        <audio id="player" controls></audio>
+        <a class="download" id="dl" download="voz.mp3">Descargar MP3</a>
+      </div>
+
+    </section>
+  </div>
+</div>
+
+<script>
+(function () {
+  const $ = (id) => document.getElementById(id);
+  const store = {
+    get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
+    set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+  };
+
+  let voices = store.get("voices", []);
+
+  function headers(extra) {
+    const h = Object.assign({}, extra || {});
+    const k = ($("apikey").value || "").trim();
+    if (k) h["X-Fish-Key"] = k;
+    return h;
+  }
+  function show(el, text) { el.textContent = text; el.hidden = !text; }
+
+  function renderVoices() {
+    const list = $("voiceList"), sel = $("voiceSel");
+    list.innerHTML = "";
+    sel.innerHTML = "";
+    $("voiceEmpty").hidden = voices.length > 0;
+    voices.forEach((v, i) => {
+      const li = document.createElement("li");
+      const info = document.createElement("div");
+      const n = document.createElement("div"); n.className = "name"; n.textContent = v.title;
+      const d = document.createElement("div"); d.className = "id"; d.textContent = v.id;
+      info.append(n, d);
+      const del = document.createElement("button");
+      del.className = "ghost"; del.textContent = "Quitar";
+      del.onclick = () => { voices.splice(i, 1); store.set("voices", voices); renderVoices(); };
+      li.append(info, del);
+      list.append(li);
+
+      const o = document.createElement("option");
+      o.value = v.id; o.textContent = v.title;
+      sel.append(o);
+    });
+    if (!voices.length) {
+      const o = document.createElement("option");
+      o.value = ""; o.textContent = "Primero crea una voz";
+      sel.append(o);
+    }
+    const last = store.get("lastVoice", "");
+    if (last && voices.some(v => v.id === last)) sel.value = last;
+  }
+
+  // Selección de archivos
+  $("audios").addEventListener("change", () => {
+    const f = $("audios").files;
+    $("drop").classList.toggle("has-files", f.length > 0);
+    $("dropText").textContent = f.length
+      ? (f.length === 1 ? f[0].name : f.length + " audios seleccionados")
+      : "Toca para elegir un audio (10 a 30 segundos de voz limpia, sin música)";
+  });
+
+  // Crear voz
+  $("btnCreate").addEventListener("click", async () => {
+    show($("vErr"), ""); show($("vOk"), "");
+    const files = $("audios").files;
+    if (!files.length) { show($("vErr"), "Elige al menos un audio."); return; }
+    const fd = new FormData();
+    for (const f of files) fd.append("audios", f);
+    fd.append("title", $("vtitle").value.trim() || "Mi voz");
+    if ($("vtext").value.trim()) fd.append("texts", $("vtext").value.trim());
+
+    const btn = $("btnCreate");
+    btn.disabled = true; btn.textContent = "Creando voz…";
+    try {
+      const r = await fetch("/api/voices", { method: "POST", headers: headers(), body: fd });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || ("Error " + r.status));
+      voices.unshift({ id: j.id, title: j.title || $("vtitle").value.trim() || "Mi voz" });
+      store.set("voices", voices);
+      store.set("lastVoice", j.id);
+      renderVoices();
+      $("voiceSel").value = j.id;
+      show($("vOk"), "Voz creada. Ya puedes escribir un texto y generar el audio.");
+    } catch (e) {
+      show($("vErr"), e.message);
+    } finally {
+      btn.disabled = false; btn.textContent = "Crear voz";
+    }
+  });
+
+  // Añadir ID manual
+  $("btnAddId").addEventListener("click", () => {
+    const id = $("manualId").value.trim();
+    if (!id) return;
+    if (!voices.some(v => v.id === id)) {
+      voices.unshift({ id, title: "Voz " + id.slice(0, 6) });
+      store.set("voices", voices);
+      renderVoices();
+    }
+    $("manualId").value = "";
+  });
+
+  // Texto y velocidad
+  $("text").addEventListener("input", () => { $("chars").textContent = $("text").value.length; });
+  $("speed").addEventListener("input", () => { $("speedVal").textContent = Number($("speed").value).toFixed(1); });
+  $("voiceSel").addEventListener("change", () => store.set("lastVoice", $("voiceSel").value));
+
+  // Generar audio
+  let lastUrl = null;
+  $("btnTts").addEventListener("click", async () => {
+    show($("tErr"), "");
+    const text = $("text").value.trim();
+    const voice = $("voiceSel").value;
+    if (!voice) { show($("tErr"), "Crea o elige una voz primero."); return; }
+    if (!text) { show($("tErr"), "Escribe el texto que quieres convertir en voz."); return; }
+
+    const btn = $("btnTts");
+    btn.disabled = true; btn.textContent = "Generando…";
+    try {
+      const r = await fetch("/api/tts", {
+        method: "POST",
+        headers: headers({ "Content-Type": "application/json" }),
+        body: JSON.stringify({
+          text, reference_id: voice,
+          speed: Number($("speed").value),
+          language: $("lang").value
+        })
+      });
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        throw new Error(j.error || ("Error " + r.status));
+      }
+      const blob = await r.blob();
+      if (lastUrl) URL.revokeObjectURL(lastUrl);
+      lastUrl = URL.createObjectURL(blob);
+      $("player").src = lastUrl;
+      $("dl").href = lastUrl;
+      $("result").hidden = false;
+      $("player").play().catch(() => {});
+    } catch (e) {
+      show($("tErr"), e.message);
+    } finally {
+      btn.disabled = false; btn.textContent = "Generar audio";
+    }
+  });
+
+  // API key: se guarda en este navegador
+  function keyState() { $("keyState").textContent = $("apikey").value.trim() ? "(guardada en este navegador)" : ""; }
+  $("apikey").value = store.get("fishKey", "");
+  $("apikey").addEventListener("input", () => { store.set("fishKey", $("apikey").value.trim()); keyState(); });
+  keyState();
+
+  renderVoices();
+})();
+</script>
+</body>
+</html>
